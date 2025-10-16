@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <title>Untitled</title>
+    <link rel="stylesheet" href="./style.css">
+
+  </head>
+    
+  <body>
+  <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vibration Monitoring Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* ===== General Styles ===== */
+    * {margin:0; padding:0; box-sizing:border-box;}
+    body {
+      font-family: 'Poppins', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      color: white;
+      position: relative;
+      background: radial-gradient(circle at top left, #001f3f, #000);
+    }
+
+    /* ===== Background Image Layer ===== */
+    body::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: url('https://images.unsplash.com/photo-1601972602300-6ff3b2c7e9d2?auto=format&fit=crop&w=1400&q=80') center/cover no-repeat;
+      opacity: 0.25;
+      filter: blur(6px);
+      z-index: -1;
+    }
+
+    /* ===== Shared Container Styles ===== */
+    .container, .dashboard {
+      backdrop-filter: blur(15px);
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 25px;
+      box-shadow: 0 0 30px rgba(0,0,0,0.5);
+      padding: 2.5rem 3rem;
+      text-align: center;
+      width: 90%;
+      max-width: 900px;
+      transition: 0.3s ease;
+      animation: fadeIn 1s ease;
+    }
+
+    @keyframes fadeIn {
+      from {opacity:0; transform:scale(0.95);}
+      to {opacity:1; transform:scale(1);}
+    }
+
+    h1, h2 {
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+    h1 {font-size: 2rem; margin-bottom: 1rem;}
+    h2 {font-size: 1.3rem;}
+
+    /* ===== Buttons ===== */
+    button {
+      background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+      color: white;
+      border: none;
+      padding: 0.9rem 2rem;
+      border-radius: 30px;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 1rem;
+      transition: 0.3s;
+      box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);
+    }
+    button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 25px rgba(0, 210, 255, 0.6);
+    }
+
+    #status {margin-top: 1rem; font-weight: 500;}
+
+    /* ===== Dashboard ===== */
+    .dashboard {display: none; flex-direction: column; align-items:center;}
+    nav {
+      display:flex; justify-content:space-between; align-items:center;
+      width:100%; margin-bottom:1.5rem;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(200px,1fr));
+      gap:1.5rem;
+      width:100%;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 20px;
+      padding: 1rem;
+      transition: 0.3s;
+    }
+    .card:hover {transform: translateY(-5px); background: rgba(255,255,255,0.15);}
+    .card h2 {margin-bottom: 0.5rem;}
+    .card p {font-size: 1.2rem;}
+
+    canvas {
+      margin-top: 2rem;
+      background: rgba(0,0,0,0.2);
+      border-radius: 10px;
+      padding:1rem;
+      width: 100%;
+    }
+
+    @media (max-width:600px){
+      .container, .dashboard {padding:1.5rem;}
+      button {width:100%;}
+    }
+  </style>
+</head>
+<body>
+  <!-- ===== Home Page ===== -->
+  <div class="container" id="home">
+    <h1>Vibration Monitoring</h1>
+    <p>Connect to your nearby Bluetooth sensor device to start tracking vibrations.</p>
+    <button id="connectBtn">🔗 Connect to Device</button>
+    <p id="status"></p>
+  </div>
+
+  <!-- ===== Dashboard ===== -->
+  <div class="dashboard" id="dashboard">
+    <nav>
+      <h2>📊 Dashboard</h2>
+      <button id="backBtn">Disconnect</button>
+    </nav>
+    <div class="metrics">
+      <div class="card" id="accCard"><h2>Acceleration</h2><p id="accVal">--</p></div>
+      <div class="card" id="velCard"><h2>Velocity</h2><p id="velVal">--</p></div>
+      <div class="card" id="dispCard"><h2>Displacement</h2><p id="dispVal">--</p></div>
+    </div>
+    <button id="plotBtn">Start Plotting Data</button>
+    <canvas id="vibrationChart" height="200"></canvas>
+  </div>
+
+  <script>
+    let device, characteristic, chart;
+    const thresholds = {
+      acceleration: {ok:5, warn:10},
+      velocity: {ok:5, warn:12},
+      displacement: {ok:0.5, warn:2}
+    };
+
+    const connectBtn = document.getElementById('connectBtn');
+    const status = document.getElementById('status');
+    const home = document.getElementById('home');
+    const dashboard = document.getElementById('dashboard');
+    const accCard = document.getElementById('accCard');
+    const velCard = document.getElementById('velCard');
+    const dispCard = document.getElementById('dispCard');
+    const plotBtn = document.getElementById('plotBtn');
+
+    connectBtn.addEventListener('click', async () => {
+      try {
+        device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: ['battery_service']
+        });
+        const server = await device.gatt.connect();
+        status.innerText = "✅ Connection Successful!";
+        setTimeout(() => {
+          home.style.display = "none";
+          dashboard.style.display = "flex";
+        }, 1000);
+      } catch (error) {
+        status.innerText = "❌ Connection Failed: " + error;
+      }
+    });
+
+    document.getElementById('backBtn').addEventListener('click', () => {
+      device?.gatt.disconnect();
+      dashboard.style.display = "none";
+      home.style.display = "block";
+      status.innerText = "";
+    });
+
+    plotBtn.addEventListener('click', () => {
+      plotBtn.style.display = 'none';
+      const ctx = document.getElementById('vibrationChart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {label:'Acceleration (m/s²)', data:[], borderColor:'#00d2ff', borderWidth:2, fill:false},
+            {label:'Velocity (mm/s)', data:[], borderColor:'#3a7bd5', borderWidth:2, fill:false},
+            {label:'Displacement (mm)', data:[], borderColor:'#ff5f6d', borderWidth:2, fill:false},
+          ]
+        },
+        options: {
+          animation: {duration: 800, easing: 'easeOutQuart'},
+          scales: {x:{}, y:{beginAtZero:true}},
+          plugins: {legend:{labels:{color:'#fff'}}}
+        }
+      });
+
+      // Simulated live data
+      setInterval(() => {
+        const acc = Math.random()*15;
+        const vel = Math.random()*15;
+        const disp = Math.random()*3;
+        const t = new Date().toLocaleTimeString();
+
+        chart.data.labels.push(t);
+        chart.data.datasets[0].data.push(acc);
+        chart.data.datasets[1].data.push(vel);
+        chart.data.datasets[2].data.push(disp);
+        chart.update();
+
+        updateMetric(acc, vel, disp);
+      }, 2000);
+    });
+
+    function updateMetric(acc, vel, disp) {
+      document.getElementById('accVal').innerText = acc.toFixed(2)+" m/s²";
+      document.getElementById('velVal').innerText = vel.toFixed(2)+" mm/s";
+      document.getElementById('dispVal').innerText = disp.toFixed(2)+" mm";
+      checkStatus(acc, accCard, thresholds.acceleration);
+      checkStatus(vel, velCard, thresholds.velocity);
+      checkStatus(disp, dispCard, thresholds.displacement);
+    }
+
+    function checkStatus(value, card, limit) {
+      card.style.border = "3px solid";
+      if(value < limit.ok) card.style.borderColor = "lime";
+      else if(value < limit.warn) card.style.borderColor = "orange";
+      else {
+        card.style.borderColor = "red";
+        alert("⚠️ Fault detected!");
+      }
+    }
+  </script>
+</body>
+</html>
+    <script  src="./script.js"></script>
+
+  </body>
+  
+</html>
